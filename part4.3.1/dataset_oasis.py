@@ -1,48 +1,50 @@
+# part4_vae/dataset_oasis.py
 import os, glob, numpy as np, torch
-from torch.utils.data import Dataset
-import cv2
-
+import torch.nn.functional as F
 try:
-    import nibabel as nib  # 如果是 .nii.gz 需要
+    import nibabel as nib  # 读 NIfTI 用
 except Exception:
     nib = None
 
 def _load_volume(path):
     if path.endswith(".npy"):
-        vol = np.load(path)  # [D,H,W] or [H,W]
-    else:  # .nii or .nii.gz
-        assert nib is not None, "Please pip install nibabel"
-        vol = nib.load(path).get_fdata()  # float64
+        vol = np.load(path)
+    else:
+        assert nib is not None, "This dataset contains NIfTI; please `pip install nibabel`."
+        vol = nib.load(path).get_fdata()
     vol = np.asarray(vol, dtype=np.float32)
-    # 归一化到 [0,1]
-    vol = (vol - vol.min()) / (vol.max() - vol.min() + 1e-6)
-    return vol  # [D,H,W] or [H,W]
+    # 简单归一化到 [0,1]（去掉极值更稳）
+    lo, hi = np.percentile(vol, 1), np.percentile(vol, 99)
+    vol = np.clip((vol - lo) / (hi - lo + 1e-6), 0, 1)
+    return vol
 
-def _center_crop(img, size=128):
-    h, w = img.shape
-    s = min(h, w)
-    y0 = (h - s)//2; x0 = (w - s)//2
-    img = img[y0:y0+s, x0:x0+s]
-    return cv2.resize(img, (size, size), interpolation=cv2.INTER_AREA)
+def _resize_tensor(img, size=128):
+    # img: [1,H,W] torch.float32
+    img = F.interpolate(img.unsqueeze(0), size=(size,size), mode="bilinear", align_corners=False)
+    return img.squeeze(0)
 
-class Oasis2DSlices(Dataset):
-    def __init__(self, root="/home/groups/comp3710/oasis_preproc", split="train", take_every=4):
-        # 根目录你可以用 ls 看真实子目录名，下面的 glob 兼容多种放法
-        cand = []
+class Oasis2DSlices(torch.utils.data.Dataset):
+    """
+    从 root 递归收集 .npy / .nii / .nii.gz，按 80/20 划分 train/test。
+    3D 体数据按 take_every 采样轴向切片，统一 resize 到 128x128。
+    """
+    def __init__(self, root="/home/groups/comp3710/oasis_preproc", split="train",
+                 take_every=4, size=128):
+        self.size = size
+        paths = []
         for ext in ("*.npy","*.nii","*.nii.gz"):
-            cand += glob.glob(os.path.join(root, "**", ext), recursive=True)
-        assert len(cand)>0, f"No volumes found under {root}"
-        # 简单划分：前 80% 训练，后 20% 测试
-        cand.sort()
-        n = int(len(cand)*0.8)
-        self.paths = cand[:n] if split=="train" else cand[n:]
+            paths += glob.glob(os.path.join(root, "**", ext), recursive=True)
+        assert paths, f"No volumes found under {root}. Check the path."
+        paths.sort()
+        n_train = int(0.8 * len(paths))
+        self.vol_paths = paths[:n_train] if split=="train" else paths[n_train:]
         self.take_every = take_every
 
-        # 预索引所有切片路径（轻量）
+        # 索引 (path, z)；z=None 表示 2D 文件
         self.index = []
-        for p in self.paths:
+        for p in self.vol_paths:
             vol = _load_volume(p)
-            if vol.ndim==2:  # 单片
+            if vol.ndim == 2:
                 self.index.append((p, None))
             else:
                 for z in range(0, vol.shape[0], self.take_every):
@@ -54,6 +56,12 @@ class Oasis2DSlices(Dataset):
         p, z = self.index[i]
         vol = _load_volume(p)
         img = vol if z is None else vol[z]
-        img = _center_crop(img, 128).astype(np.float32)  # [128,128]
-        x = torch.from_numpy(img[None, ...])             # [1,128,128]
-        return x, x  # 自编码器：输入=目标
+        img = torch.from_numpy(img)[None, ...]          # [1,H,W]
+        # 居中裁剪成正方形，再 resize 到 128
+        H, W = img.shape[-2:]
+        s = min(H, W)
+        top, left = (H - s)//2, (W - s)//2
+        img = img[..., top:top+s, left:left+s]
+        img = _resize_tensor(img, self.size)            # [1,128,128]
+        img = img.clamp(0,1).float()
+        return img, img  # 自编码器：输入=目标
