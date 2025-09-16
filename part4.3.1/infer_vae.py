@@ -10,16 +10,24 @@ def main():
     ap.add_argument("--z", type=int, default=16)
     ap.add_argument("--ckpt", type=str, default="artifacts/vae_oasis.pth")
     ap.add_argument("--points", type=int, default=2000)
+    ap.add_argument("--data-root", type=str,
+                    default=os.environ.get("OASIS_ROOT", "/home/groups/comp3710/OASIS"))
     args = ap.parse_args()
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    ds = Oasis2DSlices(split="test")
-    ld = torch.utils.data.DataLoader(ds, batch_size=128, shuffle=True, num_workers=4)
+
+    # 传入 root，workers 跟随 Slurm，pin_memory 仅在 cuda 开
+    nw = min(int(os.environ.get("SLURM_CPUS_PER_TASK", "2")), 2)
+    pin = torch.cuda.is_available()
+    ds = Oasis2DSlices(root=args.data_root, split="test", take_every=4, size=128)
+    ld = torch.utils.data.DataLoader(ds, batch_size=128, shuffle=True,
+                                     num_workers=nw, pin_memory=pin, persistent_workers=False)
+
     model = VAE(z_dim=args.z).to(dev)
     model.load_state_dict(torch.load(args.ckpt, map_location=dev))
     model.eval()
 
-    # 1) 重建若干张
+    # 1) 重建
     x,_ = next(iter(ld))
     x = x.to(dev)
     with torch.no_grad():
@@ -28,13 +36,16 @@ def main():
     vutils.save_image(torch.cat([x[:8].cpu(), xhat[:8].cpu()],0),
                       "artifacts/recon_eval.png", nrow=8, normalize=True)
 
-    # 2) 潜空间可视化（用 PCA；如果装了 UMAP 就更好看）
+    # 2) 潜空间可视化
     zs = []
     with torch.no_grad():
         cnt = 0
         for xb,_ in ld:
             xb = xb.to(dev)
-            mu,_ = model.encode(xb)
+            try:
+                mu,_ = model.encode(xb)   
+            except AttributeError:
+                _, mu, _ = model(xb)      # 退化方案：用 forward 输出的 mu
             zs.append(mu.cpu().numpy())
             cnt += xb.size(0)
             if cnt >= args.points: break

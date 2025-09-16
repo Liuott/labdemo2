@@ -49,6 +49,7 @@ def main():
             opt.zero_grad(set_to_none=True)
             with amp.autocast("cuda", enabled=use_amp):
                 xhat, mu, lv = model(x)
+            with amp.autocast("cuda", enabled=False):
                 loss, rec, kl = vae_loss(x, xhat, mu, lv)
             scaler.scale(loss).backward()
             scaler.step(opt); scaler.update()
@@ -58,8 +59,10 @@ def main():
         with torch.no_grad():
             x,_ = next(iter(te_ld))
             x = x.to(dev)
-            xhat, mu, lv = model(x)
-            val, rec, kl = vae_loss(x, xhat, mu, lv)
+            with amp.autocast("cuda", enabled=use_amp):
+                xhat, mu, lv = model(x)
+            with amp.autocast("cuda", enabled=False):
+                val, rec, kl = vae_loss(x, xhat, mu, lv)
             save_recon(x.cpu(), xhat.cpu(), f"artifacts/recon_ep{ep:02d}.png", n=8)
         print(f"Epoch {ep:02d} | val={val.item():.3f} rec={rec.item():.3f} kl={kl.item():.3f}")
 
