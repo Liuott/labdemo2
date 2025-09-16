@@ -38,8 +38,10 @@ class VAE(nn.Module):
         xhat = self.decode(z)
         return xhat, mu, lv
 
-def vae_loss(x, xhat, mu, lv):
-    x = x.float(); xhat = xhat.float()
+def vae_loss(x, xhat, mu, logvar, eps=1e-6):
+    # 防止 log(0) / log(1)
+    xhat = xhat.clamp(eps, 1 - eps).float()
+    x    = x.float()
     rec = F.binary_cross_entropy(xhat, x, reduction='sum')
-    kl  = -0.5 * torch.sum(1 + lv - mu.pow(2) - lv.exp())
-    return (rec + kl) / x.size(0), rec/x.size(0), kl/x.size(0)
+    kl  = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    return rec + kl, rec, kl
