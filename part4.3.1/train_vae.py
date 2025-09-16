@@ -50,7 +50,7 @@ def main():
             with amp.autocast("cuda", enabled=use_amp):
                 xhat, mu, lv = model(x)
             with amp.autocast("cuda", enabled=False):
-                loss, rec, kl = vae_loss(x, xhat, mu, lv)
+                loss, rec, kl = vae_loss(x.float(), xhat.float(), mu, lv)
             scaler.scale(loss).backward()
             scaler.step(opt); scaler.update()
 
@@ -62,7 +62,7 @@ def main():
             with amp.autocast("cuda", enabled=use_amp):
                 xhat, mu, lv = model(x)
             with amp.autocast("cuda", enabled=False):
-                val, rec, kl = vae_loss(x, xhat, mu, lv)
+                val, rec, kl = vae_loss(x.float(), xhat.float(), mu, lv)
             save_recon(x.cpu(), xhat.cpu(), f"artifacts/recon_ep{ep:02d}.png", n=8)
         print(f"Epoch {ep:02d} | val={val.item():.3f} rec={rec.item():.3f} kl={kl.item():.3f}")
 
