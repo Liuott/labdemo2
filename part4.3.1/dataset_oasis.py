@@ -34,7 +34,7 @@ def _load_volume_any(path):
         raise ValueError(f"Unsupported file type: {path}")
 
     arr = np.asarray(arr, dtype=np.float32)
-    # 归一化到 [0,1]（鲁棒一些：1%~99% 百分位）
+    # normalize to [0,1] using 1%-99% percentiles
     lo, hi = np.percentile(arr, 1), np.percentile(arr, 99)
     if hi > lo:
         arr = (arr - lo) / (hi - lo)
@@ -82,12 +82,12 @@ class Oasis2DSlices(torch.utils.data.Dataset):
         if len(paths) == 0:
             raise AssertionError(f"No volumes/images found under {root}. Try different root or add format support.")
 
-        # 80/20 划分
+        # 80/20 
         n_train = int(0.8 * len(paths))
         self.vol_paths = paths[:n_train] if split=="train" else paths[n_train:]
         self.take_every = take_every
 
-        # 建立 (path, z) 索引
+        # create index of (path, slice_z or None)
         self.index = []
         for p in self.vol_paths:
             try:
@@ -116,6 +116,7 @@ class Oasis2DSlices(torch.utils.data.Dataset):
             # 万一读到多通道（H,W,C），取灰度
             img = np.mean(img, axis=-1).astype(np.float32)
         img = torch.from_numpy(img)[None, ...]  # [1,H,W]
+        
         # 中心裁剪成正方形并 resize
         H, W = img.shape[-2:]
         s = min(H, W)
