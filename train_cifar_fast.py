@@ -60,6 +60,7 @@ def main():
     loss_fn = torch.nn.CrossEntropyLoss(label_smoothing=0.1)
     opt = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9,
                           weight_decay=args.wd, nesterov=True)
+    #onecycle learning rate
     sched = torch.optim.lr_scheduler.OneCycleLR(
         opt, max_lr=args.lr, epochs=args.epochs, steps_per_epoch=len(train_ld)
     )
