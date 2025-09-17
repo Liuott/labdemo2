@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 try:
-    from PIL import Image   # 读 PNG/JPG 用
+    from PIL import Image   # Pillow
 except Exception:
     Image = None
 
@@ -116,7 +116,7 @@ class Oasis2DSlices(torch.utils.data.Dataset):
             # 万一读到多通道（H,W,C），取灰度
             img = np.mean(img, axis=-1).astype(np.float32)
         img = torch.from_numpy(img)[None, ...]  # [1,H,W]
-        
+
         # 中心裁剪成正方形并 resize
         H, W = img.shape[-2:]
         s = min(H, W)
