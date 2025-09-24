@@ -15,8 +15,8 @@ def get_data(bs):
     ])
     test_tf = T.Compose([T.ToTensor(), T.Normalize(mean, std)])
     #after download,change to false
-    train = tv.datasets.CIFAR10(root="./data", train=True,  download=False, transform=train_tf)
-    test  = tv.datasets.CIFAR10(root="./data", train=False, download=False, transform=test_tf)
+    train = tv.datasets.CIFAR10(root="./data", train=True,  download=True, transform=train_tf)
+    test  = tv.datasets.CIFAR10(root="./data", train=False, download=True, transform=test_tf)
     train_ld = torch.utils.data.DataLoader(train, batch_size=bs, shuffle=True,
                                            num_workers=0, pin_memory=True, persistent_workers=False)
     test_ld  = torch.utils.data.DataLoader(test, batch_size=bs*2, shuffle=False,
